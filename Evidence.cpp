@@ -1112,6 +1112,19 @@ const FocalElementContainerDispatcher &Evidence::getDispatcher() const {
     return *dispatcher;
 }
 
+double Evidence::BetP_notnorm(const FocalElement &w) const {
+    if (w.cardinality() == 0)return 0.0;
+    double bp = 0;
+    const std::vector<std::unique_ptr<FocalElement>> &focal_elements = fecontainer->getFocalElementsArray();
+    const std::vector<double> &mass_array = fecontainer->getMassArray();
+    for (int i = 0; i < focal_elements.size(); ++i) {
+        const FocalElement &fe = *focal_elements[i];
+        bp += (w.intersect(fe)->cardinality()) * (mass_array[i] / fe.cardinality());
+    }
+    bp += w.cardinality() * (ignorance / discernment_frame->cardinality());
+    return bp;
+}
+
 
 
 

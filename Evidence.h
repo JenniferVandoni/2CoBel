@@ -343,6 +343,12 @@ public:
      */
     const std::vector<double> &getCanonicalDecompositionWeights() const;
 
+    /**
+     * Calculate the \f$BetP(A)\f$ not normalized of the FocalElement A.
+     * @param elem The FocalElement.
+     * @return BetP not normalized of elem.
+     */
+    double BetP_notnorm(const FocalElement &w) const;
 
 };
 
