@@ -14,6 +14,19 @@
 #include "containers/DefaultFocalElementContainerDispatcher.h"
 #include <unordered_set>
 
+typedef enum {
+    E_HOHLE = 1,
+    E_YAGER = 2,
+    E_NGUYEN = 3,
+    E_DUBOIS_PRADE = 4,
+    E_LAMATA_MORAL = 5,
+    E_KLIR_PARVIZ = 6,
+    E_PAL = 7,
+    E_JOUSSELME = 8,
+    E_DENG = 9,
+    E_RADIM = 10
+} entropy_e;
+
 /**
  * @class Evidence
  * Main class encapsulating the logic for the management of a belief assignment.
@@ -349,6 +362,20 @@ public:
      * @return BetP not normalized of elem.
      */
     double BetP_notnorm(const FocalElement &w) const;
+
+    /**
+     * Calculate the \f$Pl_P(A)\f$ of the Singleton FocalElement A. cite: "On the plausibility transformation method for translating belief function models to probability models".
+     * @param elem The Singleton FocalElement.
+     * @return Pl_Pm of w.
+     */
+    double Pl_P(const FocalElement &w) const;
+
+    /**
+     * Calculate the Entropy of the BBA.
+     * @param e The formula to use to compute entropy.
+     * @return the entropy value.
+     */
+    double getEntropy(entropy_e ent) const;
 
 };
 

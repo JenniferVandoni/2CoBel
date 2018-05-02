@@ -8,6 +8,7 @@
 #include <iostream>
 #include <cfloat>
 #include <focal_elements/UnidimensionalFocalElement.h>
+#include <errors/InvalidEnumTypeError.h>
 #include "focal_elements/CompositeFocalElement.h"
 #include "errors/InvalidBBAError.h"
 #include "Evidence.h"
@@ -1125,6 +1126,196 @@ double Evidence::BetP_notnorm(const FocalElement &w) const {
     return bp;
 }
 
+double Evidence::Pl_P(const FocalElement &w) const {
+
+    if (w.cardinality() != 1) {
+        std::string err = "Focal element cardinality has to be 1 (Pl_P only defined on singletons).";
+        throw IncompatibleTypeError(err.c_str());
+    }
+    if (conflict() != 0) {
+        std::string err = "Pl_P only defined for normalized BBAs.";
+        throw InvalidBBAError(err.c_str());
+    }
+
+    double plpm = 0;
+    double k = 0;
+    const std::vector<std::unique_ptr<FocalElement>> &singletons = discernment_frame->getInnerSingletons(1);
+    //const std::vector<std::unique_ptr<FocalElement>> &focal_elements = fecontainer->getFocalElementsArray();
+    for (int i = 0; i < singletons.size(); ++i) {
+        const FocalElement &fe = *singletons[i];
+        k += plausibility(fe);
+    }
+    plpm = plausibility(w) / k;
+
+    return plpm;
+}
+
+
+double Evidence::getEntropy(entropy_e ent) const {
+
+    if (conflict() != 0) {
+        std::string err = "Entropy only defined for normalized BBAs.";
+        throw InvalidBBAError(err.c_str());
+    }
+
+    double entropy = 0;
+
+    const std::vector<std::unique_ptr<FocalElement>> &focal_elements = fecontainer->getFocalElementsArray();
+    const std::vector<double> &mass_array = fecontainer->getMassArray();
+    double entropy_yager = 0, entropy_duboisprade = 0, sum_log_klir = 0, entropy_nguyen = 0;
+    double sum_mass = 0;
+    double sum_log = 0;
+
+    switch (ent) {
+        case E_HOHLE:
+            for (int i = 0; i < focal_elements.size(); ++i) {
+                const FocalElement &fe = *focal_elements[i];
+                sum_mass = mass_array[i];
+                sum_log = log2(1 / belief(fe));
+
+                entropy += sum_mass * sum_log;
+            }
+            entropy += ignorance * log2(1 - conflict());
+            break;
+
+        case E_YAGER:
+            for (int i = 0; i < focal_elements.size(); ++i) {
+                const FocalElement &fe = *focal_elements[i];
+                sum_mass = mass_array[i];
+                sum_log = log2(1 / plausibility(fe));
+
+                entropy += sum_mass * sum_log;
+            }
+            entropy += ignorance * log2(1 - conflict());
+            break;
+
+        case E_NGUYEN:
+            for (int i = 0; i < focal_elements.size(); ++i) {
+                const FocalElement &fe = *focal_elements[i];
+                sum_mass = mass_array[i];
+                sum_log = log2(1 / mass_array[i]);
+                entropy += sum_mass * sum_log;
+            }
+            entropy += ignorance * log2(1 / ignorance);
+            break;
+
+        case E_DUBOIS_PRADE:
+            for (int i = 0; i < focal_elements.size(); ++i) {
+                const FocalElement &fe = *focal_elements[i];
+                sum_mass = mass_array[i];
+                sum_log = log2(fe.cardinality());
+                //std::cout << sum_mass << " + " << sum_log << " = " << sum_mass << " + " << "log2(" << fe.cardinality() << ")" << std::endl;
+                entropy += sum_mass * sum_log;
+            }
+            entropy += ignorance * log2(discernment_frame->cardinality());
+            //std::cout << ignorance << " + " << log2(discernment_frame->cardinality()) << " = " << ignorance << " + " << "log2(" << discernment_frame->cardinality() << ")" << std::endl;
+            //std::cout <<std::endl;
+            break;
+
+        case E_LAMATA_MORAL:
+            for (int i = 0; i < focal_elements.size(); ++i) {
+                const FocalElement &fe = *focal_elements[i];
+                sum_mass = mass_array[i];
+                sum_log = log2(1 / plausibility(fe));
+                entropy_yager += sum_mass * sum_log;
+                entropy_duboisprade += sum_mass * log2(fe.cardinality());
+            }
+            entropy_yager += ignorance * log2(1 - conflict());
+            entropy_duboisprade += ignorance * log2(discernment_frame->cardinality());
+            entropy = entropy_yager + entropy_duboisprade;
+            break;
+
+        case E_KLIR_PARVIZ: {
+            double sum_massb=0, sum_logb=0, card=0;
+            for (int i = 0; i < focal_elements.size(); ++i) {
+                const FocalElement &fe = *focal_elements[i];
+                sum_mass = mass_array[i];
+                sum_log = 0;
+                for (int j = 0; j < focal_elements.size(); ++j) {
+                    const FocalElement &b = *focal_elements[j];
+                    sum_massb = mass_array[j];
+                    std::unique_ptr<FocalElement> diff = fe.difference(b);
+                    card = diff->cardinality()/b.cardinality();
+                    sum_logb += sum_massb*card;
+                }
+                sum_log = log2(1/(1-sum_logb));
+                entropy += sum_mass * sum_log;
+                entropy_duboisprade += sum_mass * log2(fe.cardinality());
+            }
+            // TODO entropy += ignorance * log2(1 - conflict());
+//            for (int j = 0; j < focal_elements.size(); ++j) {
+//                const FocalElement &b = *focal_elements[j];
+//                sum_massb = mass_array[j];
+//                std::unique_ptr<FocalElement> diff = .difference(b);
+//                card = diff->cardinality()/b.cardinality();
+//                sum_logb += sum_massb*card;
+//            }
+//            sum_log = log2()
+            entropy_duboisprade += ignorance * log2(discernment_frame->cardinality());
+            entropy = entropy + entropy_duboisprade;
+            break;
+        }
+
+        case E_PAL:
+            for (int i = 0; i < focal_elements.size(); ++i) {
+                const FocalElement &fe = *focal_elements[i];
+                sum_mass = mass_array[i];
+                sum_log = log2(fe.cardinality() / mass_array[i]);
+                entropy += sum_mass * sum_log;
+            }
+            entropy += ignorance * log2(discernment_frame->cardinality() / ignorance);
+            break;
+
+        case E_JOUSSELME: {
+            const std::vector<std::unique_ptr<FocalElement>> &singletons = discernment_frame->getInnerSingletons(1);
+            for (int i = 0; i < singletons.size(); ++i) {
+                const FocalElement &fe = *singletons[i];
+                sum_mass = BetP(fe);
+                sum_log = log2(1 / BetP(fe));
+                entropy += sum_mass * sum_log;
+            }
+            break;
+        }
+
+        case E_DENG:
+            for (int i = 0; i < focal_elements.size(); ++i) {
+                const FocalElement &fe = *focal_elements[i];
+                sum_mass = mass_array[i];
+                sum_log = log2(pow(2, fe.cardinality()) - 1);
+                entropy += sum_mass * sum_log;
+                sum_log = log2(1 / mass_array[i]);
+                entropy_nguyen += sum_mass * sum_log;
+            }
+            entropy += ignorance * log2(pow(2, discernment_frame->cardinality()) - 1);
+            entropy_nguyen += ignorance * log2(1 / ignorance);
+            entropy = entropy + entropy_nguyen;
+            break;
+
+        case E_RADIM: {
+            const std::vector<std::unique_ptr<FocalElement>> &singletons = discernment_frame->getInnerSingletons(1);
+            for (int i = 0; i < singletons.size(); ++i) {
+                const FocalElement &fe = *singletons[i];
+                sum_mass = Pl_P(fe);
+                sum_log = log2(1 / Pl_P(fe));
+                entropy += sum_mass * sum_log;
+            }
+            for (int i = 0; i < focal_elements.size(); ++i) {
+                const FocalElement &fe = *focal_elements[i];
+                sum_mass = mass_array[i];
+                sum_log = log2(fe.cardinality());
+                entropy += sum_mass * sum_log;
+            }
+            entropy += ignorance * log2(discernment_frame->cardinality());
+            break;
+        }
+
+        default:
+            throw InvalidEnumTypeError("The entropy type should be in the enum.");
+            break;
+    }
+
+    return entropy;
+}
 
 
 

@@ -62,7 +62,10 @@ ADD_LIBRARY(evidential SHARED
         containers/DefaultFocalElementContainerDispatcher.h
         focal_elements/CompositeFocalElement.cpp
         focal_elements/CompositeFocalElement.h
-        errors/InvalidBBAError.h algorithms/EvidentialAlgorithms.cpp algorithms/EvidentialAlgorithms.h)
+        errors/InvalidBBAError.h
+        errors/InvalidEnumTypeError.h
+        algorithms/EvidentialAlgorithms.cpp
+        algorithms/EvidentialAlgorithms.h)
 
 ADD_LIBRARY(geometry SHARED
         geometry/Point2D.h
