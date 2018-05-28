@@ -193,6 +193,7 @@ Evidence::Evidence(std::unique_ptr<FocalElementContainerDispatcher> _dispatcher,
 
 void Evidence::setCanonical_decomposition(std::unique_ptr<FocalElementContainer> _canonical_decomposition) {
     canonical_decomposition = std::move(_canonical_decomposition);
+    is_decomposed = true;
 }
 
 
@@ -339,25 +340,18 @@ Evidence::maxBetP(std::vector<std::unique_ptr<FocalElement>> &elems, bool comput
 std::unique_ptr<FocalElement> Evidence::maxBetP_withSingletons(int approx_step_size) const {
     if (!isValidBBA()) {
         throw InvalidBBAError("Cannot apply method to an invalid BBA.");
+
     }
-    std::vector<std::unique_ptr<FocalElement>> all_singletons;
+
+
     const std::vector<std::unique_ptr<FocalElement>> &focal_elements = fecontainer->getFocalElementsArray();
-    for (int k = 0; k < focal_elements.size(); ++k) {
-        const FocalElement &fe = *focal_elements[k];
-        if (all_singletons.size() >= discernment_frame->cardinality())break;
-        std::vector<std::unique_ptr<FocalElement>> singletons = fe.getInnerSingletons(approx_step_size);
-        for (int i = 0; i < singletons.size(); ++i) {
-            const FocalElement &singleton = *singletons[i];
-            auto results = std::find_if(
-                    all_singletons.begin(),
-                    all_singletons.end(),
-                    [&](std::unique_ptr<FocalElement> const &object) {
-                        return *object == singleton;
-                    });
-            if (results == all_singletons.end())all_singletons.push_back(std::move(singletons[i]));
-        }
+
+    std::unique_ptr<FocalElement> globalunion = focal_elements[0]->clone();
+    for (int j = 1; j < focal_elements.size(); ++j) {
+        globalunion = globalunion->unite(*focal_elements[j]);
     }
-    //std::cout << all_singletons.size() << std::endl;
+    std::vector<std::unique_ptr<FocalElement>> all_singletons = globalunion->getInnerSingletons(approx_step_size);
+
     return maxBetP(all_singletons, true);
 }
 
@@ -593,26 +587,31 @@ Evidence Evidence::cautious_rule(const Evidence &other, bool normalize) const {
         final.setGSSF();
     }
 
-    std::vector<int> todel;
+    std::vector<int> todel(final.numFocalElements(), false);
     for (int l = 0; l < final.numFocalElements(); ++l) {
         if (fabs(final.getMass(l)) < 1e-3) {
-            todel.push_back(l);
+            todel[l] = true;
         }
         if (*final.getFocal_elements()[l] == *discernment_frame) {
             final.setIgnorance(final.getIgnorance() + final.getMass(l));
-            todel.push_back(l);
+            todel[l] = true;
         }
     }
-    for (int m = 0; m < todel.size(); ++m) {
-        final.deleteFocalElement(todel[m] - m);
+
+    const std::vector<std::unique_ptr<FocalElement>> &elemsf = final.getFocal_elements();
+    Evidence realfinal(dispatcher->clone(), discernment_frame->clone(), final.getIgnorance());
+
+    for (int j = 0; j < todel.size(); ++j) {
+        if (!todel[j]) {
+            realfinal.addFocalElement(elemsf[j]->clone(), final.getMass(j));
+        }
     }
-    final.is_gssf = false;
 
-    final.setCanonical_decomposition(std::move(new_decomposition));
+    realfinal.setCanonical_decomposition(std::move(new_decomposition));
 
-    if (normalize)final.normalize();
+    if (normalize)realfinal.normalize();
 
-    return final;
+    return realfinal;
 }
 
 
@@ -624,10 +623,10 @@ void Evidence::discount(double alpha) {
     //const std::vector<std::unique_ptr<FocalElement>> &focal_elements = fecontainer->getFocalElementsArray();
     const std::vector<double> &mass_array = fecontainer->getMassArray();
     for (int i = 0; i < mass_array.size(); ++i) {
-        fecontainer->set(i, mass_array[i] * (1 - alpha));
+        fecontainer->set(i, mass_array[i] * alpha);
     }
-    ignorance *= (1 - alpha);
-    ignorance += alpha;
+    ignorance *= alpha;
+    ignorance += (1 - alpha);
     is_decomposed = false;
 }
 
@@ -933,11 +932,14 @@ void q2w(std::vector<double> &q, std::vector<double> &w) {
 }
 
 
-void
+bool
 buildCanonicalDecomposition(const Evidence &ev, std::vector<std::unique_ptr<UnidimensionalFocalElement>> &out_elems,
                             std::vector<double> &outweights) {
     auto maxnum = static_cast<unsigned long long int>(pow(2, ev.getDiscernment_frame()->cardinality()));
-
+    std::vector<double> buf;
+    if (maxnum > buf.max_size()) {
+        return false;
+    }
     std::vector<double> qs(maxnum);
     for (int k = 0; k < maxnum; ++k) {
         UnidimensionalFocalElement cur(k);
@@ -955,6 +957,7 @@ buildCanonicalDecomposition(const Evidence &ev, std::vector<std::unique_ptr<Unid
             outweights.push_back(w[l]);
         }
     }
+    return true;
 
 }
 
@@ -998,7 +1001,7 @@ void Evidence::initCanonicalDecomposition() {
     canonical_decomposition->clear();
 
     if (ignorance == 0) {
-        discount(1e-6);
+        discount(1.0 - 1e-6);
     }
 
     const std::vector<std::unique_ptr<FocalElement>> &focal_elements = fecontainer->getFocalElementsArray();
@@ -1080,7 +1083,11 @@ void Evidence::initCanonicalDecomposition() {
 
         }
 
-        buildCanonicalDecomposition(new_ev, out_elems, outweights);
+        if (!buildCanonicalDecomposition(new_ev, out_elems, outweights)) {
+            std::cout << "WARNING: canonical decomposition fail. Capacity hardware limits exceeded."
+                      << std::endl;
+            return;
+        }
 
         for (int j = 0; j < outweights.size(); ++j) {
             auto ID = out_elems[j]->getKey();
@@ -1118,6 +1125,7 @@ const std::vector<double> &Evidence::getCanonicalDecompositionWeights() const {
 const FocalElementContainerDispatcher &Evidence::getDispatcher() const {
     return *dispatcher;
 }
+
 
 double Evidence::BetP_notnorm(const FocalElement &w) const {
     if (w.cardinality() == 0)return 0.0;
@@ -1323,28 +1331,9 @@ double Evidence::getEntropy(entropy_e ent) const {
     return entropy;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+int Evidence::indexOf(const FocalElement &fe) const {
+    return fecontainer->indexOf(fe);
+}
 
 
 
